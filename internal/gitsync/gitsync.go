@@ -1,0 +1,348 @@
+package gitsync
+
+import (
+	"bufio"
+	"bytes"
+	"cmp"
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/pkg/errors"
+
+	"github.com/nieomylnieja/gitsync/internal/config"
+	"github.com/nieomylnieja/gitsync/internal/diff"
+)
+
+const (
+	gitsyncUpdateBranch = "gitsync-update"
+	commitBaseMessage   = "chore: gitsync changes"
+	promptMessage       = "Accept hunk? [Y|y|n|i|h]: "
+)
+
+func Run(conf *config.Config) error {
+	// #nosec G304
+	if err := os.MkdirAll(conf.StorePath, 0o750); err != nil {
+		return errors.Wrap(err, "failed to create repositories store under specified path")
+	}
+	for _, repo := range append(conf.Repositories, conf.Root) {
+		if err := cloneRepo(repo); err != nil {
+			return errors.Wrapf(err, "failed to clone repository %s", repo.Name)
+		}
+		if err := updateTrackedRef(repo); err != nil {
+			return errors.Wrapf(err, "failed to update repository %s", repo.Name)
+		}
+		if err := checkoutSyncBranch(repo); err != nil {
+			return err
+		}
+	}
+	updatedFiles := make(map[*config.RepositoryConfig][]string, len(conf.Repositories))
+	for _, file := range conf.SyncFiles {
+		rootFilePath := filepath.Join(conf.StorePath, conf.Root.Name, file.Path)
+		for _, syncedRepo := range conf.Repositories {
+			updated, err := syncRepoFile(conf, syncedRepo, file, rootFilePath)
+			if err != nil {
+				return errors.Wrapf(err, "failed to sync %s repository file: %s", syncedRepo.Name, file.Name)
+			}
+			if updated {
+				updatedFiles[syncedRepo] = append(updatedFiles[syncedRepo], file.Path)
+			}
+		}
+	}
+	for repo, files := range updatedFiles {
+		commit, err := commitChanges(conf.Root, repo, files)
+		if err != nil {
+			return errors.Wrapf(err, "failed to commit changes to %s repository", repo.Name)
+		}
+		if err = pushChanges(repo); err != nil {
+			return errors.Wrapf(err, "failed to push changes to %s repository", repo.Name)
+		}
+		if err = openPullRequest(repo, commit); err != nil {
+			return errors.Wrapf(err, "failed to open pull request for %s repository", repo.Name)
+		}
+	}
+	return nil
+}
+
+func syncRepoFile(
+	conf *config.Config,
+	syncedRepo *config.RepositoryConfig,
+	file *config.FileConfig,
+	rootFilePath string,
+) (bool, error) {
+	syncedRepoFilePath := filepath.Join(conf.StorePath, syncedRepo.Name, file.Path)
+	var regexes []string
+	for _, ignore := range append(syncedRepo.Ignore, conf.Ignore...) {
+		if ignore.Regex != nil {
+			regexes = append(regexes, *ignore.Regex)
+		}
+	}
+	args := []string{
+		"-U", "0",
+		"--label", fmt.Sprintf("%s (synced): %s (%s)", syncedRepo.Name, file.Name, file.Path),
+		"--label", fmt.Sprintf("%s (root): %s (%s)", conf.Root.Name, file.Name, file.Path),
+	}
+	for _, regex := range regexes {
+		args = append(args, "-I")
+		args = append(args, regex)
+	}
+	args = append(args,
+		syncedRepoFilePath,
+		rootFilePath)
+	out, err := newCmd().
+		SkipErroneousStatus(1).
+		Exec("diff", args...)
+	if err != nil {
+		return false, errors.Wrapf(err, "failed to execute diff command")
+	}
+	if out.Len() == 0 {
+		return false, nil
+	}
+	unifiedFmt, err := diff.ParseDiffOutput(out)
+	if err != nil {
+		return false, err
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	resultHunks := make([]diff.Hunk, 0, len(unifiedFmt.Hunks))
+hunkLoop:
+	for i, hunk := range unifiedFmt.Hunks {
+		for _, ignore := range append(syncedRepo.Ignore, conf.Ignore...) {
+			if ignore.Hunk != nil && ignore.Hunk.Equal(hunk) {
+				continue hunkLoop
+			}
+		}
+		maxLineLen := len(slices.MaxFunc(
+			append(hunk.Changes, strings.Split(unifiedFmt.Header, "\n")...),
+			func(a, b string) int { return cmp.Compare(len(a), len(b)) },
+		))
+		sep := strings.Repeat("=", maxLineLen)
+		fmt.Printf("%[1]s\n%[2]s\n%[3]s%[1]s\n", sep, unifiedFmt.Header, hunk.String())
+		fmt.Print(promptMessage)
+		for scanner.Scan() {
+			switch scanner.Text() {
+			case "Y":
+				resultHunks = append(resultHunks, unifiedFmt.Hunks[i:]...)
+				break hunkLoop
+			case "y", "yes":
+				resultHunks = append(resultHunks, hunk)
+			case "n", "no":
+			case "i":
+				// Copy loop variable.
+				hunk := hunk
+				syncedRepo.Ignore = append(syncedRepo.Ignore, &config.IgnoreConfig{Hunk: &hunk})
+			default:
+				fmt.Println("Invalid input. Please enter Y (all), y (yes), n (no), i (ignore), or h (help).")
+				fmt.Print(promptMessage)
+				continue
+			}
+			break
+		}
+	}
+	unifiedFmt.Hunks = resultHunks
+	patch := unifiedFmt.String()
+	if patch == "" {
+		return false, nil
+	}
+	fmt.Printf("Applying patch to %s\n", syncedRepoFilePath)
+	if _, err = newCmd().
+		SetStdin(bytes.NewBufferString(patch)).
+		Exec(
+			"patch",
+			syncedRepoFilePath,
+			"--input=-",
+			"--reject-file=-",
+			"--silent",
+			"--unified",
+			"--force",
+		); err != nil {
+		fmt.Printf("Patch:\n%s\n", patch)
+		return false, errors.Wrap(err, "failed to apply patch")
+	}
+	return true, nil
+}
+
+type commitDetails struct {
+	Title string
+	Body  string
+}
+
+func commitChanges(root, repo *config.RepositoryConfig, changedFiles []string) (*commitDetails, error) {
+	path := repo.GetPath()
+	fmt.Printf("%s: adding changes to the index\n", repo.Name)
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"add",
+		"--all",
+	); err != nil {
+		return nil, errors.Wrap(err, "failed to add changes to the index")
+	}
+	fmt.Printf("%s: committing changes\n", repo.Name)
+	message := commitBaseMessage
+	var body strings.Builder
+	body.WriteString("Synced the following files:\n\n")
+	for _, file := range changedFiles {
+		body.WriteString(fmt.Sprintf("- %s\n", file))
+	}
+	body.WriteString(fmt.Sprintf("\nRoot repository ref: %s\n", root.URL))
+	bodyStr := body.String()
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"commit",
+		"-m", message,
+		"-m", bodyStr,
+	); err != nil {
+		return nil, errors.Wrap(err, "failed to commit changes")
+	}
+	return &commitDetails{
+		Title: message,
+		Body:  bodyStr,
+	}, nil
+}
+
+func pushChanges(repo *config.RepositoryConfig) error {
+	path := repo.GetPath()
+	fmt.Printf("%s: pushing changes to remote\n", repo.Name)
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"push",
+		"--force",
+		"-u",
+		"origin",
+		gitsyncUpdateBranch,
+	); err != nil {
+		return errors.Wrap(err, "failed to push changes to remote")
+	}
+	return nil
+}
+
+type ghPullRequest struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+func openPullRequest(repo *config.RepositoryConfig, commit *commitDetails) error {
+	ref := repo.GetRef()
+	u, err := url.Parse(repo.URL)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse repository URL")
+	}
+	ghRepo := filepath.Join(u.Host, u.Path)
+	out, err := execCmd("gh", "auth", "token")
+	if err != nil {
+		return errors.Wrap(err, "failed to get GitHub token")
+	}
+	ghToken := strings.TrimSpace(out.String())
+	out, err = newCmd().
+		WithEnv("GH_TOKEN", ghToken).
+		Exec(
+			"gh",
+			"-R", ghRepo,
+			"pr",
+			"list",
+			"--search", commitBaseMessage,
+			"--json", "title,url",
+		)
+	if err != nil {
+		return errors.Wrap(err, "failed to list GitHub pull requests")
+	}
+	var prs []ghPullRequest
+	if err = json.Unmarshal(out.Bytes(), &prs); err != nil {
+		return errors.Wrap(err, "failed to unmarshal GitHub pull requests list response")
+	}
+	if len(prs) > 0 {
+		for _, pr := range prs {
+			if pr.Title == commit.Title {
+				fmt.Printf("%s: pull request already exists, skipping creation (%s)\n", repo.Name, pr.URL)
+				return nil
+			}
+		}
+	}
+	fmt.Printf("%s: opening GitHub pull request\n", repo.Name)
+	out, err = newCmd().
+		WithEnv("GH_TOKEN", ghToken).
+		Exec(
+			"gh",
+			"-R", ghRepo,
+			"pr",
+			"create",
+			"--title", commit.Title,
+			"--body", commit.Body,
+			"--assignee", "@me",
+			"--base", ref,
+			"--head", gitsyncUpdateBranch,
+		)
+	if err != nil {
+		return errors.Wrap(err, "failed to push changes to remote")
+	}
+	prURL := strings.TrimSpace(out.String())
+	fmt.Printf("%s: pull request URL: %s\n", repo.Name, prURL)
+	return nil
+}
+
+func cloneRepo(repo *config.RepositoryConfig) error {
+	path := repo.GetPath()
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return nil
+	}
+	fmt.Printf("%s: cloning %s into %s\n", repo.Name, repo.URL, path)
+	if _, err := execCmd(
+		"git",
+		"clone",
+		"--depth", "1",
+		"--",
+		repo.URL+".git",
+		path,
+	); err != nil {
+		return errors.Wrap(err, "failed to clone repository")
+	}
+	return nil
+}
+
+func updateTrackedRef(repo *config.RepositoryConfig) error {
+	path := repo.GetPath()
+	ref := repo.GetRef()
+	fmt.Printf("%s: updating repository ref (%s)\n", repo.Name, ref)
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"fetch",
+		"--force",
+	); err != nil {
+		return errors.Wrap(err, "failed to clone repository")
+	}
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"reset",
+		"--hard",
+		ref,
+	); err != nil {
+		return errors.Wrapf(err, "failed to reset repository to %s ref", ref)
+	}
+	return nil
+}
+
+func checkoutSyncBranch(repo *config.RepositoryConfig) error {
+	path := repo.GetPath()
+	ref := repo.GetRef()
+	fmt.Printf("%s: checking out %s branch\n", repo.Name, gitsyncUpdateBranch)
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"checkout",
+		"--force",
+		"-B",
+		gitsyncUpdateBranch,
+		ref,
+	); err != nil {
+		return errors.Wrap(err, "failed to create/reset gitsync branch")
+	}
+	return nil
+}
