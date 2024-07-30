@@ -21,7 +21,7 @@ linters-settings:
   goimports:
     # Put imports beginning with prefix after 3rd-party packages;
     # it's a comma-separated list of prefixes.
-    local-prefixes: github.com/nieomylnieja/go-libyear
+    local-prefixes: github.com/nieomylnieja/gitsync
   govet:
     # False positives and reporting on error shadowing (which is intended).
     # Quoting Robi Pike:

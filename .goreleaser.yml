@@ -1,13 +1,13 @@
-project_name: go-libyear
+project_name: gitsync
 
 release:
   github:
     owner: nieomylnieja
-    name: go-libyear
+    name: gitsync
 
 builds:
-  - main: ./cmd/go-libyear
-    binary: go-libyear
+  - main: ./cmd/gitsync
+    binary: gitsync
     goos:
       - darwin
       - linux
