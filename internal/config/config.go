@@ -12,13 +12,22 @@ import (
 )
 
 type Config struct {
-	StorePath    string              `json:"storePath"`
+	StorePath    string              `json:"storePath,omitempty"`
 	Root         *RepositoryConfig   `json:"root"`
 	Ignore       []*IgnoreConfig     `json:"ignore,omitempty"`
 	Repositories []*RepositoryConfig `json:"syncRepositories"`
 	SyncFiles    []*FileConfig       `json:"syncFiles"`
 
-	path string
+	path              string
+	resolvedStorePath string
+}
+
+func (c *Config) GetPath() string {
+	return c.path
+}
+
+func (c *Config) GetStorePath() string {
+	return c.resolvedStorePath
 }
 
 type RepositoryConfig struct {
@@ -90,28 +99,28 @@ func (c *Config) Save() error {
 
 func (c *Config) setDefaults() error {
 	if c.StorePath == "" {
-		if xdgConfigHome, ok := os.LookupEnv("XDG_CONFIG_HOME"); ok {
-			c.StorePath = filepath.Join(xdgConfigHome, "gitsync")
+		if xdgConfigHome, ok := os.LookupEnv("XDG_DATA_HOME"); ok {
+			c.resolvedStorePath = filepath.Join(xdgConfigHome, "gitsync")
 		} else {
-			c.StorePath = os.ExpandEnv(filepath.Join("$HOME", ".config", "gitsync"))
+			c.resolvedStorePath = os.ExpandEnv(filepath.Join("$HOME", ".local", "share", "gitsync"))
 		}
 	} else {
-		c.StorePath = os.ExpandEnv(c.StorePath)
+		c.resolvedStorePath = os.ExpandEnv(c.StorePath)
 	}
-	if strings.HasPrefix(c.StorePath, "~") {
+	if strings.HasPrefix(c.resolvedStorePath, "~") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return errors.Wrap(err, "failed to get user home directory")
 		}
-		c.StorePath = filepath.Join(home, c.StorePath[2:])
+		c.resolvedStorePath = filepath.Join(home, c.resolvedStorePath[2:])
 	}
 	for _, repo := range c.Repositories {
-		repo.path = filepath.Join(c.StorePath, repo.Name)
+		repo.path = filepath.Join(c.GetStorePath(), repo.Name)
 		if repo.Ref == "" {
 			repo.defaultRef = "main"
 		}
 	}
-	c.Root.path = filepath.Join(c.StorePath, c.Root.Name)
+	c.Root.path = filepath.Join(c.GetStorePath(), c.Root.Name)
 	if c.Root.Ignore != nil {
 		return errors.New("root repository cannot have ignore rules")
 	}

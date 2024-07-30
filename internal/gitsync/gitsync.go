@@ -36,7 +36,7 @@ func Run(conf *config.Config, command Command) error {
 		return err
 	}
 	// #nosec G304
-	if err := os.MkdirAll(conf.StorePath, 0o750); err != nil {
+	if err := os.MkdirAll(conf.GetStorePath(), 0o750); err != nil {
 		return errors.Wrap(err, "failed to create repositories store under specified path")
 	}
 	for _, repo := range append(conf.Repositories, conf.Root) {
@@ -52,7 +52,7 @@ func Run(conf *config.Config, command Command) error {
 	}
 	updatedFiles := make(map[*config.RepositoryConfig][]string, len(conf.Repositories))
 	for _, file := range conf.SyncFiles {
-		rootFilePath := filepath.Join(conf.StorePath, conf.Root.Name, file.Path)
+		rootFilePath := filepath.Join(conf.GetStorePath(), conf.Root.Name, file.Path)
 		for _, syncedRepo := range conf.Repositories {
 			updated, err := syncRepoFile(conf, command, syncedRepo, file, rootFilePath)
 			if err != nil {
@@ -64,6 +64,10 @@ func Run(conf *config.Config, command Command) error {
 		}
 	}
 	if command == CommandDiff {
+		return nil
+	}
+	if len(updatedFiles) == 0 {
+		fmt.Println("No changes to synchronize.")
 		return nil
 	}
 	for repo, files := range updatedFiles {
@@ -88,7 +92,7 @@ func syncRepoFile(
 	file *config.FileConfig,
 	rootFilePath string,
 ) (bool, error) {
-	syncedRepoFilePath := filepath.Join(conf.StorePath, syncedRepo.Name, file.Path)
+	syncedRepoFilePath := filepath.Join(conf.GetStorePath(), syncedRepo.Name, file.Path)
 	var regexes []string
 	for _, ignore := range append(syncedRepo.Ignore, conf.Ignore...) {
 		if ignore.Regex != nil {
@@ -158,10 +162,10 @@ hunkLoop:
 		}
 	}
 	unifiedFmt.Hunks = resultHunks
-	patch := unifiedFmt.String()
-	if patch == "" {
+	if len(unifiedFmt.Hunks) == 0 {
 		return false, nil
 	}
+	patch := unifiedFmt.String()
 	switch command {
 	case CommandDiff:
 		sep := getPrintSeparator(strings.Split(patch, "\n"))
@@ -217,7 +221,7 @@ func commitChanges(root, repo *config.RepositoryConfig, changedFiles []string) (
 	for _, file := range changedFiles {
 		body.WriteString(fmt.Sprintf("- %s\n", file))
 	}
-	body.WriteString(fmt.Sprintf("\nRoot repository ref: %s\n", root.URL))
+	body.WriteString(fmt.Sprintf("\nRoot repository ref: %s\n", strings.TrimSuffix(root.URL, ".git")))
 	bodyStr := body.String()
 	if _, err := execCmd(
 		"git",
@@ -262,7 +266,7 @@ func openPullRequest(repo *config.RepositoryConfig, commit *commitDetails) error
 	if err != nil {
 		return errors.Wrap(err, "failed to parse repository URL")
 	}
-	ghRepo := filepath.Join(u.Host, u.Path)
+	ghRepo := filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"))
 	out, err := execCmd("gh", "auth", "token")
 	if err != nil {
 		return errors.Wrap(err, "failed to get GitHub token")
@@ -326,7 +330,7 @@ func cloneRepo(repo *config.RepositoryConfig) error {
 		"clone",
 		"--depth", "1",
 		"--",
-		repo.URL+".git",
+		repo.URL,
 		path,
 	); err != nil {
 		return errors.Wrap(err, "failed to clone repository")

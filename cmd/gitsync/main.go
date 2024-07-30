@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nieomylnieja/gitsync/internal/config"
 	"github.com/nieomylnieja/gitsync/internal/gitsync"
@@ -41,9 +42,16 @@ func run() error {
 		os.Exit(1)
 	}
 	if configPath == nil || *configPath == "" {
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "error: '-c' flag is required but was not provided")
-		flag.Usage()
-		os.Exit(1)
+		defaultConfigPath := getDefaultConfigPath()
+		if _, err := os.Stat(defaultConfigPath); err != nil {
+			_, _ = fmt.Fprintf(flag.CommandLine.Output(),
+				"error: '-c' was not provided and there was no default config file located at: %s\n",
+				defaultConfigPath)
+			flag.Usage()
+			os.Exit(1)
+		} else {
+			configPath = &defaultConfigPath
+		}
 	}
 	conf, err := config.ReadConfig(*configPath)
 	if err != nil {
@@ -56,4 +64,14 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+func getDefaultConfigPath() string {
+	var path string
+	if xdgConfigHome, ok := os.LookupEnv("XDG_CONFIG_HOME"); ok {
+		path = filepath.Join(xdgConfigHome, "gitsync", "config.json")
+	} else {
+		path = os.ExpandEnv(filepath.Join("$HOME", ".config", "gitsync", "config.json"))
+	}
+	return path
 }

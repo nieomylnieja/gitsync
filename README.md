@@ -1,21 +1,32 @@
 # gitsync
 
 `gitsync` helps manage multiple git repositories which share the same files
-(or parts of them) and need them kept up-to-date and in sync.
+(or parts of them) and helps keep them up-to-date and in sync.
 
 This project was born out of the need to manage multiple repositories which
 shared the same development files, like linter configs, CI/CD scripts, etc.
 
 Why not use submodules?
 
-- They won't do the job if there are slight differences between root and
-  synchronized files.
+- They won't be sufficient if there are slight differences between root and
+  synchronized files and If the tool does not support merging multiple
+  configs.
 - Some tools depend on their config files being in specific places,
   like in the root of the repository.
   While this can be solved by linking, the solution is not platform-agnostic.
 
-That being said, I wanted a tool which would automate the process of manually
-synchronizing changes to these files between repositories.
+What I ended up doing was:
+
+- Define a _root_ repository, which would serve as a staple for other
+  repositories to follow.
+- Update linter configs, CI/CD scripts, GH workflows, etc. at the _root_
+  first and only then propagate these changes manually to all the other
+  _synchronised_ repositories.
+
+However, with a growing number of repositories I had to govern, it started
+to become more and more painful and time consuming to do that by hand.
+
+Enter `gitsync` 😉
 
 ## Install
 
@@ -42,13 +53,18 @@ make build
 `gitsync` ships with two commands:
 
 1. `sync` - interactively creates a patch and applies it to the synchronized
-repositories' files.
+   repositories' files.
 2. `diff` - shows the differences between the root and synchronized files in
-unified format.
+   unified format.
 
 ```shell
 gitsync -c config.json [diff|sync]
 ```
+
+If the `-c` (config file path) flag is not provided,
+`gitsync` will look for a `gitsync.json` file in either
+`$XDG_CONFIG_HOME/gitsync/config.json` or
+`$HOME/.config/gitsync/config.json`.
 
 ### Sync
 
@@ -79,52 +95,59 @@ The config file is a JSON file which describes the synchronization process.
 
 ```json5
 {
-  // Optional. Default: $HOME/.config/gitsync or $XDG_CONFIG_HOME/gitsync.
-  "storePath": "/home/mh/.config/gitsync",
-  // Required.
+  // Optional. Default: $HOME/.local/share/gitsync or $XDG_DATA_HOME/gitsync.
+  // Path to the directory where the repositories will be cloned and stored.
+  "storePath": "~/.config/gitsync",
+  // Required. Configuration of the root repository.
+  // Follows the same format as syncRepositories[].
   "root": {
-    // Required.
     "name": "template",
-    // Required.
-    "url": "https://github.com/nobl9/go-repo-template"
+    "url": "https://github.com/nieomylnieja/go-repo-template.git"
   },
   // Optional.
   "ignore": [
     {
-      // Optional.
-      "regex": "^\\s*local-prefixes:"
+      // Optional. Regular expression used to ignore matching hunks.
+      "regex": "^\\s*local-prefixes:",
+    },
+    {
+      // Optional. Hunk to be ignored is represented with lines header and changes list.
+      // Either enter it manually or use the 'i' option in the sync command prompt.
+      //
+      // Ref: https://www.gnu.org/software/diffutils/manual/html_node/Detailed-Unified.html.
+      "hunk": {
+        "lines": "@@ -3,0 +4,2 @@",
+        "changes": [
+          "+  skip-dirs:",
+          "+    - scripts"
+        ]
+      }
     }
   ],
   // Required. At least one repository must be provided.
   "syncRepositories": [
     {
-      // Required.
+      // Required. Name of the repository, must be unique.
       "name": "nobl9-go",
-      // Required.
-      "url": "https://github.com/nobl9/nobl9-go",
-      // Optional.
-      "ref": "main",
-      // Optional, merged with global 'ignore' section.
-      "ignore": [
-        {
-          // Optional.
-          "regex": "custom-regex",
-          // Optional.
-          "hunk": ""
-        }
-      ],
+      // Required. URL used to clone the repository.
+      "url": "https://github.com/nieomylnieja/go-libyear.git",
+      // Optional. Default: "main".
+      "ref": "dev-branch",
+      // Optional, merged with global 'ignore' section. 
+      // Follows the same format and rules but applies ONLY to the specified repository.
+      "ignore": [],
     },
     {
       "name": "sloctl",
-      "url": "https://github.com/nobl9/sloctl",
+      "url": "https://github.com/nieomylnieja/sword-to-obsidian.git",
     }
   ],
   // Required. At least one file must be provided.
   "syncFiles": [
     {
-      // Required.
+      // Required. Descriptive name of the file.
       "name": "golangci linter config",
-      // Required.
+      // Required. Relative path to the file in both root and synchronised repositories.
       "path": ".golangci.yml"
     }
   ]
