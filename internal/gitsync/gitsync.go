@@ -322,7 +322,10 @@ func openPullRequest(repo *config.Repository, commit *commitDetails) error {
 			"--title", commit.Title,
 			"--body", commit.Body,
 			"--assignee", "@me",
-			"--base", ref,
+			// It's vital to remove the "origin/" prefix.
+			// Otherwise, the GitHub CLI will fail to create a pull request,
+			// as it can only accept a direct branch name.
+			"--base", strings.TrimPrefix(ref, "origin/"),
 			"--head", gitsyncUpdateBranch,
 		)
 	if err != nil {
