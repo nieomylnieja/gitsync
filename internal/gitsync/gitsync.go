@@ -46,8 +46,10 @@ func Run(conf *config.Config, command Command) error {
 		if err := updateTrackedRef(repo); err != nil {
 			return errors.Wrapf(err, "failed to update repository %s", repo.Name)
 		}
-		if err := checkoutSyncBranch(repo); err != nil {
-			return err
+		if command == CommandSync {
+			if err := checkoutSyncBranch(repo); err != nil {
+				return err
+			}
 		}
 	}
 	updatedFiles := make(map[*config.RepositoryConfig][]string, len(conf.Repositories))
@@ -350,7 +352,16 @@ func updateTrackedRef(repo *config.RepositoryConfig) error {
 		"--force",
 		"--all",
 	); err != nil {
-		return errors.Wrap(err, "failed to clone repository")
+		return errors.Wrap(err, "failed to fetch repository objects and refs")
+	}
+	if _, err := execCmd(
+		"git",
+		"-C", path,
+		"checkout",
+		"--force",
+		ref,
+	); err != nil {
+		return errors.Wrapf(err, "failed to force checkout %s ref", ref)
 	}
 	if _, err := execCmd(
 		"git",
@@ -359,7 +370,7 @@ func updateTrackedRef(repo *config.RepositoryConfig) error {
 		"--hard",
 		ref,
 	); err != nil {
-		return errors.Wrapf(err, "failed to reset repository to %s ref", ref)
+		return errors.Wrapf(err, "failed to hard reset repository to %s ref", ref)
 	}
 	return nil
 }

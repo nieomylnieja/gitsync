@@ -140,7 +140,7 @@ The config file is a JSON file which describes the synchronization process.
       "name": "go-libyear",
       // Required. URL used to clone the repository.
       "url": "https://github.com/nieomylnieja/go-libyear.git",
-      // Optional. Default: "main".
+      // Optional. Default: "origin/main".
       "ref": "dev-branch",
       // Optional, merged with global 'ignore' section.
       // Follows the same format and rules but applies ONLY to the specified repository.
