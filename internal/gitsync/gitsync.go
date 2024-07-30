@@ -328,7 +328,6 @@ func cloneRepo(repo *config.RepositoryConfig) error {
 	if _, err := execCmd(
 		"git",
 		"clone",
-		"--depth", "1",
 		"--",
 		repo.URL,
 		path,
@@ -347,6 +346,7 @@ func updateTrackedRef(repo *config.RepositoryConfig) error {
 		"-C", path,
 		"fetch",
 		"--force",
+		"--all",
 	); err != nil {
 		return errors.Wrap(err, "failed to clone repository")
 	}
