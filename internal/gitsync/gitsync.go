@@ -101,6 +101,7 @@ func syncRepoFile(
 	}
 	args := []string{
 		"-U", "0",
+		"--color=always",
 		"--label", fmt.Sprintf("%s (synced): %s (%s)", syncedRepo.Name, file.Path, file.Name),
 		"--label", fmt.Sprintf("%s (root): %s (%s)", conf.Root.Name, file.Path, file.Name),
 	}
@@ -139,7 +140,7 @@ hunkLoop:
 		}
 
 		sep := getPrintSeparator(append(hunk.Changes, strings.Split(unifiedFmt.Header, "\n")...))
-		fmt.Printf("%[1]s\n%[2]s\n%[3]s%[1]s\n", sep, unifiedFmt.Header, hunk.String())
+		fmt.Printf("%[1]s\n%[2]s\n%[3]s%[1]s\n", sep, unifiedFmt.Header, hunk.Original)
 		fmt.Print(promptMessage)
 		for scanner.Scan() {
 			switch scanner.Text() {
@@ -165,13 +166,14 @@ hunkLoop:
 	if len(unifiedFmt.Hunks) == 0 {
 		return false, nil
 	}
-	patch := unifiedFmt.String()
 	switch command {
 	case CommandDiff:
+		patch := unifiedFmt.String(true)
 		sep := getPrintSeparator(strings.Split(patch, "\n"))
 		fmt.Printf("%s\n%s", sep, patch)
 		return false, nil
 	case CommandSync:
+		patch := unifiedFmt.String(false)
 		if err = applyPatch(syncedRepoFilePath, patch); err != nil {
 			return false, err
 		}
@@ -394,6 +396,9 @@ func checkDependencies() error {
 	}
 	if _, err := execCmd("gh", "--version"); err != nil {
 		return errors.New("'gh' (GitHub CLI) is required to be installed")
+	}
+	if _, err := execCmd("diff", "--version"); err != nil {
+		return errors.New("'diff' (GNU) is required to be installed")
 	}
 	return nil
 }

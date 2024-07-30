@@ -48,6 +48,14 @@ make build
 ./bin/gitsync ./go.mod
 ```
 
+### Requirements
+
+The following programs must be installed and available in the `$PATH`:
+
+- `git`
+- `diff` (GNU version)
+- `gh` (GitHub CLI)
+
 ## Usage
 
 `gitsync` ships with two commands:

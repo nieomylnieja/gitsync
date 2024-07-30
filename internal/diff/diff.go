@@ -3,6 +3,7 @@ package diff
 import (
 	"bufio"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -18,12 +19,16 @@ type UnifiedFormat struct {
 	Hunks []Hunk
 }
 
-func (u UnifiedFormat) String() string {
+func (u UnifiedFormat) String(original bool) string {
 	var sb strings.Builder
 	sb.WriteString(u.Header)
 	sb.WriteString("\n")
 	for _, hunk := range u.Hunks {
-		sb.WriteString(hunk.String())
+		if original {
+			sb.WriteString(hunk.Original)
+		} else {
+			sb.WriteString(hunk.String())
+		}
 	}
 	return sb.String()
 }
@@ -34,6 +39,9 @@ type Hunk struct {
 	Lines string `json:"lines"`
 	// Changes contains only the changed lines, without any context.
 	Changes []string `json:"changes"`
+	// Original is the original string representation of the hunk.
+	// It may include color codes.
+	Original string `json:"-"`
 }
 
 func (h Hunk) String() string {
@@ -59,22 +67,35 @@ func (h Hunk) Equal(other Hunk) bool {
 	return true
 }
 
+var colorCodeRegex = regexp.MustCompile(`\x1b\[\d+m(?P<content>.*)\x1b\[\d+m`)
+
 func ParseDiffOutput(output io.Reader) (*UnifiedFormat, error) {
 	uf := &UnifiedFormat{}
 	scan := bufio.NewScanner(output)
 	hunkIndex := -1
+
+	stripColorCodes := func(line string) string {
+		return colorCodeRegex.ReplaceAllString(line, "${content}")
+	}
+
 	for scan.Scan() {
 		line := scan.Text()
+		originalLine := line
+		line = stripColorCodes(line)
 		switch {
 		case strings.HasPrefix(line, "---"):
 			uf.Header += line + "\n"
 		case strings.HasPrefix(line, "+++"):
 			uf.Header += line
 		case strings.HasPrefix(line, "@@"):
-			uf.Hunks = append(uf.Hunks, Hunk{Lines: line})
+			uf.Hunks = append(uf.Hunks, Hunk{Lines: line, Original: originalLine + "\n"})
 			hunkIndex++
 		default:
+			if hunkIndex == -1 {
+				return nil, errors.New("invalid diff output, missing hunk header")
+			}
 			uf.Hunks[hunkIndex].Changes = append(uf.Hunks[hunkIndex].Changes, line)
+			uf.Hunks[hunkIndex].Original += originalLine + "\n"
 		}
 	}
 	if err := scan.Err(); err != nil {
