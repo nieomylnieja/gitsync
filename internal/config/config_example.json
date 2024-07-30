@@ -12,12 +12,11 @@
   "syncRepositories": [
     {
       "name": "nobl9-go",
-      "url": "https://github.com/nobl9/nobl9-go",
-      "ignore": [
-        {
-          "regex": "^\\s*local-prefixes:"
-        }
-      ]
+      "url": "https://github.com/nobl9/nobl9-go"
+    },
+    {
+      "name": "sloctl",
+      "url": "https://github.com/nobl9/sloctl"
     }
   ],
   "syncFiles": [

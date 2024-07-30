@@ -18,13 +18,23 @@ import (
 	"github.com/nieomylnieja/gitsync/internal/diff"
 )
 
+type Command int
+
+const (
+	CommandSync Command = iota
+	CommandDiff
+)
+
 const (
 	gitsyncUpdateBranch = "gitsync-update"
 	commitBaseMessage   = "chore: gitsync changes"
 	promptMessage       = "Accept hunk? [Y|y|n|i|h]: "
 )
 
-func Run(conf *config.Config) error {
+func Run(conf *config.Config, command Command) error {
+	if err := checkDependencies(); err != nil {
+		return err
+	}
 	// #nosec G304
 	if err := os.MkdirAll(conf.StorePath, 0o750); err != nil {
 		return errors.Wrap(err, "failed to create repositories store under specified path")
@@ -44,7 +54,7 @@ func Run(conf *config.Config) error {
 	for _, file := range conf.SyncFiles {
 		rootFilePath := filepath.Join(conf.StorePath, conf.Root.Name, file.Path)
 		for _, syncedRepo := range conf.Repositories {
-			updated, err := syncRepoFile(conf, syncedRepo, file, rootFilePath)
+			updated, err := syncRepoFile(conf, command, syncedRepo, file, rootFilePath)
 			if err != nil {
 				return errors.Wrapf(err, "failed to sync %s repository file: %s", syncedRepo.Name, file.Name)
 			}
@@ -52,6 +62,9 @@ func Run(conf *config.Config) error {
 				updatedFiles[syncedRepo] = append(updatedFiles[syncedRepo], file.Path)
 			}
 		}
+	}
+	if command == CommandDiff {
+		return nil
 	}
 	for repo, files := range updatedFiles {
 		commit, err := commitChanges(conf.Root, repo, files)
@@ -70,6 +83,7 @@ func Run(conf *config.Config) error {
 
 func syncRepoFile(
 	conf *config.Config,
+	command Command,
 	syncedRepo *config.RepositoryConfig,
 	file *config.FileConfig,
 	rootFilePath string,
@@ -83,8 +97,8 @@ func syncRepoFile(
 	}
 	args := []string{
 		"-U", "0",
-		"--label", fmt.Sprintf("%s (synced): %s (%s)", syncedRepo.Name, file.Name, file.Path),
-		"--label", fmt.Sprintf("%s (root): %s (%s)", conf.Root.Name, file.Name, file.Path),
+		"--label", fmt.Sprintf("%s (synced): %s (%s)", syncedRepo.Name, file.Path, file.Name),
+		"--label", fmt.Sprintf("%s (root): %s (%s)", conf.Root.Name, file.Path, file.Name),
 	}
 	for _, regex := range regexes {
 		args = append(args, "-I")
@@ -115,11 +129,12 @@ hunkLoop:
 				continue hunkLoop
 			}
 		}
-		maxLineLen := len(slices.MaxFunc(
-			append(hunk.Changes, strings.Split(unifiedFmt.Header, "\n")...),
-			func(a, b string) int { return cmp.Compare(len(a), len(b)) },
-		))
-		sep := strings.Repeat("=", maxLineLen)
+		if command == CommandDiff {
+			resultHunks = append(resultHunks, hunk)
+			continue
+		}
+
+		sep := getPrintSeparator(append(hunk.Changes, strings.Split(unifiedFmt.Header, "\n")...))
 		fmt.Printf("%[1]s\n%[2]s\n%[3]s%[1]s\n", sep, unifiedFmt.Header, hunk.String())
 		fmt.Print(promptMessage)
 		for scanner.Scan() {
@@ -147,12 +162,26 @@ hunkLoop:
 	if patch == "" {
 		return false, nil
 	}
-	fmt.Printf("Applying patch to %s\n", syncedRepoFilePath)
-	if _, err = newCmd().
+	switch command {
+	case CommandDiff:
+		sep := getPrintSeparator(strings.Split(patch, "\n"))
+		fmt.Printf("%s\n%s", sep, patch)
+		return false, nil
+	case CommandSync:
+		if err = applyPatch(syncedRepoFilePath, patch); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func applyPatch(path, patch string) error {
+	fmt.Printf("Applying patch to %s\n", path)
+	if _, err := newCmd().
 		SetStdin(bytes.NewBufferString(patch)).
 		Exec(
 			"patch",
-			syncedRepoFilePath,
+			path,
 			"--input=-",
 			"--reject-file=-",
 			"--silent",
@@ -160,9 +189,9 @@ hunkLoop:
 			"--force",
 		); err != nil {
 		fmt.Printf("Patch:\n%s\n", patch)
-		return false, errors.Wrap(err, "failed to apply patch")
+		return errors.Wrap(err, "failed to apply patch")
 	}
-	return true, nil
+	return nil
 }
 
 type commitDetails struct {
@@ -343,6 +372,24 @@ func checkoutSyncBranch(repo *config.RepositoryConfig) error {
 		ref,
 	); err != nil {
 		return errors.Wrap(err, "failed to create/reset gitsync branch")
+	}
+	return nil
+}
+
+func getPrintSeparator(strs []string) string {
+	maxLineLen := len(slices.MaxFunc(
+		strs,
+		func(a, b string) int { return cmp.Compare(len(a), len(b)) },
+	))
+	return strings.Repeat("=", maxLineLen)
+}
+
+func checkDependencies() error {
+	if _, err := execCmd("git", "--version"); err != nil {
+		return errors.New("'git' is required to be installed")
+	}
+	if _, err := execCmd("gh", "--version"); err != nil {
+		return errors.New("'gh' (GitHub CLI) is required to be installed")
 	}
 	return nil
 }
