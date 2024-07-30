@@ -58,8 +58,8 @@ type File struct {
 }
 
 type IgnoreRule struct {
-	RepositoryName *string    `json:"fileName,omitempty"`
-	FileName       *string    `json:"repositoryName,omitempty"`
+	RepositoryName *string    `json:"repositoryName,omitempty"`
+	FileName       *string    `json:"fileName,omitempty"`
 	Regex          *string    `json:"regex,omitempty"`
 	Hunk           *diff.Hunk `json:"hunk,omitempty"`
 }
