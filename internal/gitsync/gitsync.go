@@ -53,9 +53,9 @@ func Run(conf *config.Config, command Command) error {
 		}
 	}
 	updatedFiles := make(map[*config.Repository][]string, len(conf.Repositories))
-	for _, file := range conf.SyncFiles {
-		rootFilePath := filepath.Join(conf.GetStorePath(), conf.Root.Name, file.Path)
-		for _, syncedRepo := range conf.Repositories {
+	for _, syncedRepo := range conf.Repositories {
+		for _, file := range conf.SyncFiles {
+			rootFilePath := filepath.Join(conf.GetStorePath(), conf.Root.Name, file.Path)
 			updated, err := syncRepoFile(conf, command, syncedRepo, file, rootFilePath)
 			if err != nil {
 				return errors.Wrapf(err, "failed to sync %s repository file: %s", syncedRepo.Name, file.Name)
@@ -98,7 +98,7 @@ func syncRepoFile(
 	regexes := make([]string, 0)
 	for _, ignore := range getIgnoreRules(conf, ignoreRulesQuery{
 		RepoName: syncedRepo.Name,
-		FileName: file.Path,
+		FileName: file.Name,
 		Regex:    true,
 	}) {
 		regexes = append(regexes, *ignore.Regex)
@@ -135,7 +135,7 @@ hunkLoop:
 	for i, hunk := range unifiedFmt.Hunks {
 		for _, ignore := range getIgnoreRules(conf, ignoreRulesQuery{
 			RepoName: syncedRepo.Name,
-			FileName: file.Path,
+			FileName: file.Name,
 			Hunk:     true,
 		}) {
 			if ignore.Hunk.Equal(hunk) {
