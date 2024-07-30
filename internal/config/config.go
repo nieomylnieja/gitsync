@@ -14,11 +14,11 @@ import (
 const defaultRef = "origin/main"
 
 type Config struct {
-	StorePath    string              `json:"storePath,omitempty"`
-	Root         *RepositoryConfig   `json:"root"`
-	Ignore       []*IgnoreConfig     `json:"ignore,omitempty"`
-	Repositories []*RepositoryConfig `json:"syncRepositories"`
-	SyncFiles    []*FileConfig       `json:"syncFiles"`
+	StorePath    string        `json:"storePath,omitempty"`
+	Root         *Repository   `json:"root"`
+	Ignore       []*IgnoreRule `json:"ignore,omitempty"`
+	Repositories []*Repository `json:"syncRepositories"`
+	SyncFiles    []*File       `json:"syncFiles"`
 
 	path              string
 	resolvedStorePath string
@@ -32,35 +32,36 @@ func (c *Config) GetStorePath() string {
 	return c.resolvedStorePath
 }
 
-type RepositoryConfig struct {
-	Name   string          `json:"name"`
-	URL    string          `json:"url"`
-	Ref    string          `json:"ref,omitempty"`
-	Ignore []*IgnoreConfig `json:"ignore,omitempty"`
+type Repository struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Ref  string `json:"ref,omitempty"`
 
 	path       string
 	defaultRef string
 }
 
-func (r *RepositoryConfig) GetPath() string {
+func (r *Repository) GetPath() string {
 	return r.path
 }
 
-func (r *RepositoryConfig) GetRef() string {
+func (r *Repository) GetRef() string {
 	if r.Ref != "" {
 		return r.Ref
 	}
 	return r.defaultRef
 }
 
-type FileConfig struct {
+type File struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 }
 
-type IgnoreConfig struct {
-	Regex *string    `json:"regex,omitempty"`
-	Hunk  *diff.Hunk `json:"hunk,omitempty"`
+type IgnoreRule struct {
+	RepositoryName *string    `json:"fileName,omitempty"`
+	FileName       *string    `json:"repositoryName,omitempty"`
+	Regex          *string    `json:"regex,omitempty"`
+	Hunk           *diff.Hunk `json:"hunk,omitempty"`
 }
 
 func ReadConfig(configPath string) (*Config, error) {
@@ -123,9 +124,6 @@ func (c *Config) setDefaults() error {
 		}
 	}
 	c.Root.path = filepath.Join(c.GetStorePath(), c.Root.Name)
-	if c.Root.Ignore != nil {
-		return errors.New("root repository cannot have ignore rules")
-	}
 	if c.Root.Ref == "" {
 		c.Root.defaultRef = defaultRef
 	}
@@ -158,15 +156,27 @@ func (c *Config) validate() error {
 			}
 		}
 	}
+	for _, ignore := range c.Ignore {
+		if err := ignore.validate(); err != nil {
+			return errors.Wrap(err, "ignore rule validation failed")
+		}
+	}
 	return nil
 }
 
-func (f *FileConfig) validate() error {
+func (f *File) validate() error {
 	if f.Name == "" {
 		return errors.New("file name is required")
 	}
 	if f.Path == "" {
 		return errors.New("file path is required")
+	}
+	return nil
+}
+
+func (i *IgnoreRule) validate() error {
+	if i.Regex == nil && i.Hunk == nil {
+		return errors.New("either 'regex' or 'hunk' needs to be defined")
 	}
 	return nil
 }

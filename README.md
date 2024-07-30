@@ -115,9 +115,16 @@ The config file is a JSON file which describes the synchronization process.
   },
   // Optional.
   "ignore": [
+    // If neither 'repositoryName' nor 'fileName' is provided,
+    // the rule will apply globally.
+    // If both are provided, the rule will apply only to the specific repository file.
     {
+      // Optional. Name of the repository to which the ignore rule applies.
+      "repositoryName": "go-libyear",
+      // Optional. Name of the file to which the ignore rule applies.
+      "fileName": "golangci linter config",
       // Optional. Regular expression used to ignore matching hunks.
-      "regex": "^\\s*local-prefixes:",
+      "regex": "^\\s*local-prefixes:"
     },
     {
       // Optional. Hunk to be ignored is represented with lines header and changes list.
@@ -141,14 +148,11 @@ The config file is a JSON file which describes the synchronization process.
       // Required. URL used to clone the repository.
       "url": "https://github.com/nieomylnieja/go-libyear.git",
       // Optional. Default: "origin/main".
-      "ref": "dev-branch",
-      // Optional, merged with global 'ignore' section.
-      // Follows the same format and rules but applies ONLY to the specified repository.
-      "ignore": [],
+      "ref": "dev-branch"
     },
     {
       "name": "sword-to-obsidian",
-      "url": "https://github.com/nieomylnieja/sword-to-obsidian.git",
+      "url": "https://github.com/nieomylnieja/sword-to-obsidian.git"
     }
   ],
   // Required. At least one file must be provided.

@@ -52,7 +52,7 @@ func Run(conf *config.Config, command Command) error {
 			}
 		}
 	}
-	updatedFiles := make(map[*config.RepositoryConfig][]string, len(conf.Repositories))
+	updatedFiles := make(map[*config.Repository][]string, len(conf.Repositories))
 	for _, file := range conf.SyncFiles {
 		rootFilePath := filepath.Join(conf.GetStorePath(), conf.Root.Name, file.Path)
 		for _, syncedRepo := range conf.Repositories {
@@ -90,16 +90,18 @@ func Run(conf *config.Config, command Command) error {
 func syncRepoFile(
 	conf *config.Config,
 	command Command,
-	syncedRepo *config.RepositoryConfig,
-	file *config.FileConfig,
+	syncedRepo *config.Repository,
+	file *config.File,
 	rootFilePath string,
 ) (bool, error) {
 	syncedRepoFilePath := filepath.Join(conf.GetStorePath(), syncedRepo.Name, file.Path)
-	var regexes []string
-	for _, ignore := range append(syncedRepo.Ignore, conf.Ignore...) {
-		if ignore.Regex != nil {
-			regexes = append(regexes, *ignore.Regex)
-		}
+	regexes := make([]string, 0)
+	for _, ignore := range getIgnoreRules(conf, ignoreRulesQuery{
+		RepoName: syncedRepo.Name,
+		FileName: file.Path,
+		Regex:    true,
+	}) {
+		regexes = append(regexes, *ignore.Regex)
 	}
 	args := []string{
 		"-U", "0",
@@ -131,8 +133,12 @@ func syncRepoFile(
 	resultHunks := make([]diff.Hunk, 0, len(unifiedFmt.Hunks))
 hunkLoop:
 	for i, hunk := range unifiedFmt.Hunks {
-		for _, ignore := range append(syncedRepo.Ignore, conf.Ignore...) {
-			if ignore.Hunk != nil && ignore.Hunk.Equal(hunk) {
+		for _, ignore := range getIgnoreRules(conf, ignoreRulesQuery{
+			RepoName: syncedRepo.Name,
+			FileName: file.Path,
+			Hunk:     true,
+		}) {
+			if ignore.Hunk.Equal(hunk) {
 				continue hunkLoop
 			}
 		}
@@ -155,7 +161,11 @@ hunkLoop:
 			case "i":
 				// Copy loop variable.
 				hunk := hunk
-				syncedRepo.Ignore = append(syncedRepo.Ignore, &config.IgnoreConfig{Hunk: &hunk})
+				conf.Ignore = append(conf.Ignore, &config.IgnoreRule{
+					RepositoryName: &syncedRepo.Name,
+					FileName:       &file.Name,
+					Hunk:           &hunk,
+				})
 			default:
 				fmt.Println("Invalid input. Please enter Y (all), y (yes), n (no), i (ignore), or h (help).")
 				fmt.Print(promptMessage)
@@ -207,7 +217,7 @@ type commitDetails struct {
 	Body  string
 }
 
-func commitChanges(root, repo *config.RepositoryConfig, changedFiles []string) (*commitDetails, error) {
+func commitChanges(root, repo *config.Repository, changedFiles []string) (*commitDetails, error) {
 	path := repo.GetPath()
 	fmt.Printf("%s: adding changes to the index\n", repo.Name)
 	if _, err := execCmd(
@@ -242,7 +252,7 @@ func commitChanges(root, repo *config.RepositoryConfig, changedFiles []string) (
 	}, nil
 }
 
-func pushChanges(repo *config.RepositoryConfig) error {
+func pushChanges(repo *config.Repository) error {
 	path := repo.GetPath()
 	fmt.Printf("%s: pushing changes to remote\n", repo.Name)
 	if _, err := execCmd(
@@ -264,7 +274,7 @@ type ghPullRequest struct {
 	URL   string `json:"url"`
 }
 
-func openPullRequest(repo *config.RepositoryConfig, commit *commitDetails) error {
+func openPullRequest(repo *config.Repository, commit *commitDetails) error {
 	ref := repo.GetRef()
 	u, err := url.Parse(repo.URL)
 	if err != nil {
@@ -323,7 +333,7 @@ func openPullRequest(repo *config.RepositoryConfig, commit *commitDetails) error
 	return nil
 }
 
-func cloneRepo(repo *config.RepositoryConfig) error {
+func cloneRepo(repo *config.Repository) error {
 	path := repo.GetPath()
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return nil
@@ -341,7 +351,7 @@ func cloneRepo(repo *config.RepositoryConfig) error {
 	return nil
 }
 
-func updateTrackedRef(repo *config.RepositoryConfig) error {
+func updateTrackedRef(repo *config.Repository) error {
 	path := repo.GetPath()
 	ref := repo.GetRef()
 	fmt.Printf("%s: updating repository ref (%s)\n", repo.Name, ref)
@@ -375,7 +385,7 @@ func updateTrackedRef(repo *config.RepositoryConfig) error {
 	return nil
 }
 
-func checkoutSyncBranch(repo *config.RepositoryConfig) error {
+func checkoutSyncBranch(repo *config.Repository) error {
 	path := repo.GetPath()
 	ref := repo.GetRef()
 	fmt.Printf("%s: checking out %s branch\n", repo.Name, gitsyncUpdateBranch)
@@ -412,4 +422,33 @@ func checkDependencies() error {
 		return errors.New("'diff' (GNU) is required to be installed")
 	}
 	return nil
+}
+
+type ignoreRulesQuery struct {
+	RepoName string
+	FileName string
+	Hunk     bool
+	Regex    bool
+}
+
+func getIgnoreRules(conf *config.Config, query ignoreRulesQuery) []*config.IgnoreRule {
+	if len(conf.Ignore) == 0 {
+		return nil
+	}
+	rules := make([]*config.IgnoreRule, 0)
+	for _, ignore := range conf.Ignore {
+		if ignore.RepositoryName != nil && *ignore.RepositoryName != query.RepoName {
+			continue
+		}
+		if ignore.FileName != nil && *ignore.FileName != query.FileName {
+			continue
+		}
+		if query.Hunk && ignore.Hunk != nil {
+			rules = append(rules, ignore)
+		}
+		if query.Regex && ignore.Regex != nil {
+			rules = append(rules, ignore)
+		}
+	}
+	return rules
 }
