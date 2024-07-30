@@ -67,9 +67,7 @@ func (h Hunk) Equal(other Hunk) bool {
 	return true
 }
 
-var (
-	colorCodeRegex = regexp.MustCompile(`\x1b\[\d+m(?P<content>.*)\x1b\[\d+m`)
-)
+var colorCodeRegex = regexp.MustCompile(`\x1b\[\d+m(?P<content>.*)\x1b\[\d+m`)
 
 func ParseDiffOutput(output io.Reader) (*UnifiedFormat, error) {
 	uf := &UnifiedFormat{}
