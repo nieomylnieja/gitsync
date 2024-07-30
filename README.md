@@ -41,9 +41,9 @@ make build
 
 `gitsync` ships with two commands:
 
-1`sync` - interactively creates a patch and applies it to the synchronized
+1. `sync` - interactively creates a patch and applies it to the synchronized
 repositories' files.
-2`diff` - shows the differences between the root and synchronized files in
+2. `diff` - shows the differences between the root and synchronized files in
 unified format.
 
 ```shell
