@@ -11,6 +11,8 @@ import (
 	"github.com/nieomylnieja/gitsync/internal/diff"
 )
 
+const defaultRef = "origin/main"
+
 type Config struct {
 	StorePath    string              `json:"storePath,omitempty"`
 	Root         *RepositoryConfig   `json:"root"`
@@ -117,7 +119,7 @@ func (c *Config) setDefaults() error {
 	for _, repo := range c.Repositories {
 		repo.path = filepath.Join(c.GetStorePath(), repo.Name)
 		if repo.Ref == "" {
-			repo.defaultRef = "main"
+			repo.defaultRef = defaultRef
 		}
 	}
 	c.Root.path = filepath.Join(c.GetStorePath(), c.Root.Name)
@@ -125,7 +127,7 @@ func (c *Config) setDefaults() error {
 		return errors.New("root repository cannot have ignore rules")
 	}
 	if c.Root.Ref == "" {
-		c.Root.defaultRef = "main"
+		c.Root.defaultRef = defaultRef
 	}
 	return nil
 }
