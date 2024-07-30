@@ -21,7 +21,7 @@ What I ended up doing was:
   repositories to follow.
 - Update linter configs, CI/CD scripts, GH workflows, etc. at the _root_
   first and only then propagate these changes manually to all the other
-  _synchronised_ repositories.
+  _synchronized_ repositories.
 
 However, with a growing number of repositories I had to govern, it started
 to become more and more painful and time consuming to do that by hand.
@@ -87,7 +87,8 @@ If the `-c` (config file path) flag is not provided,
 
 ### Diff
 
-`diff` runs the same as `sync`, but instead of applying the patch it simply prints it.
+`diff` runs the same as `sync`, but instead of applying the patch it simply
+prints it.
 
 ### Config file
 
@@ -128,17 +129,17 @@ The config file is a JSON file which describes the synchronization process.
   "syncRepositories": [
     {
       // Required. Name of the repository, must be unique.
-      "name": "nobl9-go",
+      "name": "go-libyear",
       // Required. URL used to clone the repository.
       "url": "https://github.com/nieomylnieja/go-libyear.git",
       // Optional. Default: "main".
       "ref": "dev-branch",
-      // Optional, merged with global 'ignore' section. 
+      // Optional, merged with global 'ignore' section.
       // Follows the same format and rules but applies ONLY to the specified repository.
       "ignore": [],
     },
     {
-      "name": "sloctl",
+      "name": "sword-to-obsidian",
       "url": "https://github.com/nieomylnieja/sword-to-obsidian.git",
     }
   ],
@@ -147,7 +148,7 @@ The config file is a JSON file which describes the synchronization process.
     {
       // Required. Descriptive name of the file.
       "name": "golangci linter config",
-      // Required. Relative path to the file in both root and synchronised repositories.
+      // Required. Relative path to the file in both root and synchronized repositories.
       "path": ".golangci.yml"
     }
   ]

@@ -34,5 +34,6 @@ words:
   - gotools
   - govulncheck
   - nobl
+  - strs
   - vulns
   - wrapf
