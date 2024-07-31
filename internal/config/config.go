@@ -150,10 +150,16 @@ func (c *Config) validate() error {
 		if repo.URL == "" {
 			return errors.New("repository URL is required")
 		}
-		for _, file := range c.SyncFiles {
-			if err := file.validate(); err != nil {
-				return errors.Wrapf(err, "file %s validation failed", file.Name)
-			}
+	}
+	unique = make(map[string]struct{})
+	for _, file := range c.SyncFiles {
+		if _, ok := unique[file.Name]; ok {
+			return errors.Errorf("file name '%s' is not unique", file.Name)
+		} else {
+			unique[file.Name] = struct{}{}
+		}
+		if err := file.validate(); err != nil {
+			return errors.Wrapf(err, "file %s validation failed", file.Name)
 		}
 	}
 	for _, ignore := range c.Ignore {
