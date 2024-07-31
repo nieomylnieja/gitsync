@@ -132,8 +132,9 @@ func syncRepoFile(
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	resultHunks := make([]diff.Hunk, 0, len(unifiedFmt.Hunks))
+	prompt := command == CommandSync
 hunkLoop:
-	for i, hunk := range unifiedFmt.Hunks {
+	for _, hunk := range unifiedFmt.Hunks {
 		for _, ignore := range getIgnoreRules(conf, ignoreRulesQuery{
 			RepoName: syncedRepo.Name,
 			FileName: file.Name,
@@ -143,7 +144,7 @@ hunkLoop:
 				continue hunkLoop
 			}
 		}
-		if command == CommandDiff {
+		if !prompt {
 			resultHunks = append(resultHunks, hunk)
 			continue
 		}
@@ -154,8 +155,8 @@ hunkLoop:
 		for scanner.Scan() {
 			switch scanner.Text() {
 			case "Y":
-				resultHunks = append(resultHunks, unifiedFmt.Hunks[i:]...)
-				break hunkLoop
+				resultHunks = append(resultHunks, hunk)
+				prompt = false
 			case "y", "yes":
 				resultHunks = append(resultHunks, hunk)
 			case "n", "no":
