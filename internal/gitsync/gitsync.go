@@ -27,7 +27,7 @@ const (
 
 const (
 	gitsyncUpdateBranch = "gitsync-update"
-	commitBaseMessage   = "chore: gitsync changes"
+	commitBaseMessage   = "chore: gitsync update"
 	promptMessage       = "Accept hunk? [Y|y|n|i|h]: "
 	gitsyncURL          = "https://github.com/nieomylnieja/gitsync"
 )
