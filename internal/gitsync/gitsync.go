@@ -101,10 +101,11 @@ func syncRepoFile(
 		FileName: file.Name,
 		Regex:    true,
 	}) {
-		regexes = append(regexes, *ignore.Regex)
+		regexes = append(regexes, ignore.Regex...)
 	}
 	args := []string{
 		"-U", "0",
+		"--ignore-all-space",
 		"--color=always",
 		"--label", fmt.Sprintf("%s (synced): %s (%s)", syncedRepo.Name, file.Path, file.Name),
 		"--label", fmt.Sprintf("%s (root): %s (%s)", conf.Root.Name, file.Path, file.Name),
@@ -129,7 +130,6 @@ func syncRepoFile(
 	if err != nil {
 		return false, err
 	}
-	scanner := bufio.NewScanner(os.Stdin)
 	resultHunks := make([]diff.Hunk, 0, len(unifiedFmt.Hunks))
 	prompt := command == CommandSync
 hunkLoop:
@@ -139,8 +139,10 @@ hunkLoop:
 			FileName: file.Name,
 			Hunk:     true,
 		}) {
-			if ignore.Hunk.Equal(hunk) {
-				continue hunkLoop
+			for _, ignoreHunk := range ignore.Hunks {
+				if ignoreHunk.Equal(hunk) {
+					continue hunkLoop
+				}
 			}
 		}
 		if !prompt {
@@ -151,6 +153,7 @@ hunkLoop:
 		sep := getPrintSeparator(append(hunk.Changes, strings.Split(unifiedFmt.Header, "\n")...))
 		fmt.Printf("%[1]s\n%[2]s\n%[3]s%[1]s\n", sep, unifiedFmt.Header, hunk.Original)
 		fmt.Print(promptMessage)
+		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			switch scanner.Text() {
 			case "Y":
@@ -162,11 +165,32 @@ hunkLoop:
 			case "i":
 				// Copy loop variable.
 				hunk := hunk
-				conf.Ignore = append(conf.Ignore, &config.IgnoreRule{
-					RepositoryName: &syncedRepo.Name,
-					FileName:       &file.Name,
-					Hunk:           &hunk,
-				})
+				found := false
+				for _, ignore := range conf.Ignore {
+					if ignore.RepositoryName != nil && *ignore.RepositoryName == syncedRepo.Name &&
+						ignore.FileName != nil && *ignore.FileName == file.Name {
+						ignore.Hunks = append(ignore.Hunks, hunk)
+						found = true
+						break
+					}
+				}
+				if !found {
+					conf.Ignore = append(conf.Ignore, &config.IgnoreRule{
+						RepositoryName: &syncedRepo.Name,
+						FileName:       &file.Name,
+						Hunks:          []diff.Hunk{hunk},
+					})
+				}
+			case "h":
+				fmt.Printf(`Enter one of the following characters:
+  - Y (accept all hunks for %s - applies only to %s repository)
+  - y (accept the hunk)
+  - n (reject the hunk)
+  - i (ignore the hunk permanently, an ignore rule will be added to your config file)
+  - h (display this help message)
+`, file.Path, syncedRepo.URL)
+				fmt.Print(promptMessage)
+				continue
 			default:
 				fmt.Println("Invalid input. Please enter Y (all), y (yes), n (no), i (ignore), or h (help).")
 				fmt.Print(promptMessage)
@@ -449,7 +473,7 @@ func getIgnoreRules(conf *config.Config, query ignoreRulesQuery) []*config.Ignor
 		if ignore.FileName != nil && *ignore.FileName != query.FileName {
 			continue
 		}
-		if query.Hunk && ignore.Hunk != nil {
+		if query.Hunk && ignore.Hunks != nil {
 			rules = append(rules, ignore)
 		}
 		if query.Regex && ignore.Regex != nil {

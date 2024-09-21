@@ -123,21 +123,26 @@ The config file is a JSON file which describes the synchronization process.
       "repositoryName": "go-libyear",
       // Optional. Name of the file to which the ignore rule applies.
       "fileName": "golangci linter config",
-      // Optional. Regular expression used to ignore matching hunks.
-      "regex": "^\\s*local-prefixes:"
+      // Optional. List of regular expressions used to ignore matching hunks.
+      // Note: This regular expression is passed to 'diff -I <regex>' and thus follows
+      // BRE (basic regular expression) rules, you may need to escape some characters, like '+'.
+      // Ref: https://www.gnu.org/software/grep/manual/html_node/Basic-vs-Extended.html.
+      "regex": ["^\\s\\+local-prefixes:"]
     },
     {
-      // Optional. Hunk to be ignored is represented with lines header and changes list.
+      // Optional. Hunks to be ignored are represented with lines header and changes list.
       // Either enter it manually or use the 'i' option in the sync command prompt.
       //
       // Ref: https://www.gnu.org/software/diffutils/manual/html_node/Detailed-Unified.html.
-      "hunk": {
+      "hunks": [{
+        // Optional. If lines are not provided the changes will be matched anywhere within the file.
         "lines": "@@ -3,0 +4,2 @@",
+        // Required.
         "changes": [
           "+  skip-dirs:",
           "+    - scripts"
         ]
-      }
+      }]
     }
   ],
   // Required. At least one repository must be provided.
