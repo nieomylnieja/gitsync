@@ -2,11 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/pkg/errors"
 
 	"github.com/nieomylnieja/gitsync/internal/diff"
 )
@@ -68,20 +68,20 @@ func ReadConfig(configPath string) (*Config, error) {
 	// #nosec G304
 	f, err := os.Open(configPath)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to read config file")
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	var config Config
 	dec := json.NewDecoder(f)
 	dec.DisallowUnknownFields()
 	if err = dec.Decode(&config); err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal JSON config")
+		return nil, fmt.Errorf("failed to unmarshal JSON config: %w", err)
 	}
 	if err = config.validate(); err != nil {
-		return nil, errors.Wrap(err, "config validation failed")
+		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 	if err = config.setDefaults(); err != nil {
-		return nil, errors.Wrap(err, "failed to set default values")
+		return nil, fmt.Errorf("failed to set default values: %w", err)
 	}
 	config.path = configPath
 	return &config, nil
@@ -90,12 +90,12 @@ func ReadConfig(configPath string) (*Config, error) {
 func (c *Config) Save() error {
 	f, err := os.Create(c.path)
 	if err != nil {
-		return errors.Wrap(err, "failed to open/create config file")
+		return fmt.Errorf("failed to open/create config file: %w", err)
 	}
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err = enc.Encode(c); err != nil {
-		return errors.Wrap(err, "failed to save config")
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 	return nil
 }
@@ -113,7 +113,7 @@ func (c *Config) setDefaults() error {
 	if strings.HasPrefix(c.resolvedStorePath, "~") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return errors.Wrap(err, "failed to get user home directory")
+			return fmt.Errorf("failed to get user home directory: %w", err)
 		}
 		c.resolvedStorePath = filepath.Join(home, c.resolvedStorePath[2:])
 	}
@@ -140,7 +140,7 @@ func (c *Config) validate() error {
 	unique := make(map[string]struct{})
 	for _, repo := range append(c.Repositories, c.Root) {
 		if _, ok := unique[repo.Name]; ok {
-			return errors.Errorf("repository name '%s' is not unique", repo.Name)
+			return fmt.Errorf("repository name '%s' is not unique", repo.Name)
 		} else {
 			unique[repo.Name] = struct{}{}
 		}
@@ -154,17 +154,17 @@ func (c *Config) validate() error {
 	unique = make(map[string]struct{})
 	for _, file := range c.SyncFiles {
 		if _, ok := unique[file.Name]; ok {
-			return errors.Errorf("file name '%s' is not unique", file.Name)
+			return fmt.Errorf("file name '%s' is not unique", file.Name)
 		} else {
 			unique[file.Name] = struct{}{}
 		}
 		if err := file.validate(); err != nil {
-			return errors.Wrapf(err, "file %s validation failed", file.Name)
+			return fmt.Errorf("file %s validation failed: %w", file.Name, err)
 		}
 	}
 	for _, ignore := range c.Ignore {
 		if err := ignore.validate(); err != nil {
-			return errors.Wrap(err, "ignore rule validation failed")
+			return fmt.Errorf("ignore rule validation failed: %w", err)
 		}
 	}
 	return nil

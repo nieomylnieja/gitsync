@@ -2,11 +2,11 @@ package diff
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 // UnifiedFormat represents a [unified GNU diff format].
@@ -99,7 +99,7 @@ func ParseDiffOutput(output io.Reader) (*UnifiedFormat, error) {
 		}
 	}
 	if err := scan.Err(); err != nil {
-		return nil, errors.Wrap(err, "failed to parse diff output")
+		return nil, fmt.Errorf("failed to parse diff output: %w", err)
 	}
 	return uf, nil
 }
