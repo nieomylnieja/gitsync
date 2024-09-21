@@ -36,7 +36,7 @@ func (u UnifiedFormat) String(original bool) string {
 // Hunk represents a single diff hunk in of [UnifiedFormat].
 type Hunk struct {
 	// Lines is the '@@' header containing the line numbers.
-	Lines string `json:"lines"`
+	Lines string `json:"lines,omitempty"`
 	// Changes contains only the changed lines, without any context.
 	Changes []string `json:"changes"`
 	// Original is the original string representation of the hunk.
@@ -55,8 +55,10 @@ func (h Hunk) String() string {
 	return sb.String()
 }
 
+// Equal compares two [Hunk]s for equality.
+// It ignores color codes and will not compare [Hunk.Lines] if the receiver [Hunk] has no lines defined.
 func (h Hunk) Equal(other Hunk) bool {
-	if h.Lines != other.Lines || len(h.Changes) != len(other.Changes) {
+	if (h.Lines != "" && h.Lines != other.Lines) || len(h.Changes) != len(other.Changes) {
 		return false
 	}
 	for i := range h.Changes {

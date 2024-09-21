@@ -58,10 +58,10 @@ type File struct {
 }
 
 type IgnoreRule struct {
-	RepositoryName *string    `json:"repositoryName,omitempty"`
-	FileName       *string    `json:"fileName,omitempty"`
-	Regex          *string    `json:"regex,omitempty"`
-	Hunk           *diff.Hunk `json:"hunk,omitempty"`
+	RepositoryName *string     `json:"repositoryName,omitempty"`
+	FileName       *string     `json:"fileName,omitempty"`
+	Regex          []string    `json:"regex,omitempty"`
+	Hunks          []diff.Hunk `json:"hunks,omitempty"`
 }
 
 func ReadConfig(configPath string) (*Config, error) {
@@ -94,6 +94,7 @@ func (c *Config) Save() error {
 	}
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 	if err = enc.Encode(c); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -181,7 +182,7 @@ func (f *File) validate() error {
 }
 
 func (i *IgnoreRule) validate() error {
-	if i.Regex == nil && i.Hunk == nil {
+	if i.Regex == nil && i.Hunks == nil {
 		return errors.New("either 'regex' or 'hunk' needs to be defined")
 	}
 	return nil
