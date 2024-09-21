@@ -5,14 +5,13 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/pkg/errors"
 
 	"github.com/nieomylnieja/gitsync/internal/config"
 	"github.com/nieomylnieja/gitsync/internal/diff"
@@ -38,14 +37,14 @@ func Run(conf *config.Config, command Command) error {
 	}
 	// #nosec G304
 	if err := os.MkdirAll(conf.GetStorePath(), 0o750); err != nil {
-		return errors.Wrap(err, "failed to create repositories store under specified path")
+		return fmt.Errorf("failed to create repositories store under specified path: %w", err)
 	}
 	for _, repo := range append(conf.Repositories, conf.Root) {
 		if err := cloneRepo(repo); err != nil {
-			return errors.Wrapf(err, "failed to clone repository %s", repo.Name)
+			return fmt.Errorf("failed to clone repository %s: %w", repo.Name, err)
 		}
 		if err := updateTrackedRef(repo); err != nil {
-			return errors.Wrapf(err, "failed to update repository %s", repo.Name)
+			return fmt.Errorf("failed to update repository %s: %w", repo.Name, err)
 		}
 		if command == CommandSync {
 			if err := checkoutSyncBranch(repo); err != nil {
@@ -59,7 +58,7 @@ func Run(conf *config.Config, command Command) error {
 			rootFilePath := filepath.Join(conf.GetStorePath(), conf.Root.Name, file.Path)
 			updated, err := syncRepoFile(conf, command, syncedRepo, file, rootFilePath)
 			if err != nil {
-				return errors.Wrapf(err, "failed to sync %s repository file: %s", syncedRepo.Name, file.Name)
+				return fmt.Errorf("failed to sync %s repository file: %s: %w", syncedRepo.Name, file.Name, err)
 			}
 			if updated {
 				updatedFiles[syncedRepo] = append(updatedFiles[syncedRepo], file.Path)
@@ -76,13 +75,13 @@ func Run(conf *config.Config, command Command) error {
 	for repo, files := range updatedFiles {
 		commit, err := commitChanges(conf.Root, repo, files)
 		if err != nil {
-			return errors.Wrapf(err, "failed to commit changes to %s repository", repo.Name)
+			return fmt.Errorf("failed to commit changes to %s repository: %w", repo.Name, err)
 		}
 		if err = pushChanges(repo); err != nil {
-			return errors.Wrapf(err, "failed to push changes to %s repository", repo.Name)
+			return fmt.Errorf("failed to push changes to %s repository: %w", repo.Name, err)
 		}
 		if err = openPullRequest(repo, commit); err != nil {
-			return errors.Wrapf(err, "failed to open pull request for %s repository", repo.Name)
+			return fmt.Errorf("failed to open pull request for %s repository: %w", repo.Name, err)
 		}
 	}
 	return nil
@@ -121,7 +120,7 @@ func syncRepoFile(
 		SkipErroneousStatus(1).
 		Exec("diff", args...)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to execute diff command")
+		return false, fmt.Errorf("failed to execute diff command: %w", err)
 	}
 	if out.Len() == 0 {
 		return false, nil
@@ -209,7 +208,7 @@ func applyPatch(path, patch string) error {
 			"--force",
 		); err != nil {
 		fmt.Printf("Patch:\n%s\n", patch)
-		return errors.Wrap(err, "failed to apply patch")
+		return fmt.Errorf("failed to apply patch: %w", err)
 	}
 	return nil
 }
@@ -228,7 +227,7 @@ func commitChanges(root, repo *config.Repository, changedFiles []string) (*commi
 		"add",
 		"--all",
 	); err != nil {
-		return nil, errors.Wrap(err, "failed to add changes to the index")
+		return nil, fmt.Errorf("failed to add changes to the index: %w", err)
 	}
 	fmt.Printf("%s: committing changes\n", repo.Name)
 	message := commitBaseMessage
@@ -246,7 +245,7 @@ func commitChanges(root, repo *config.Repository, changedFiles []string) (*commi
 		"-m", message,
 		"-m", bodyStr,
 	); err != nil {
-		return nil, errors.Wrap(err, "failed to commit changes")
+		return nil, fmt.Errorf("failed to commit changes: %w", err)
 	}
 	return &commitDetails{
 		Title: message,
@@ -266,7 +265,7 @@ func pushChanges(repo *config.Repository) error {
 		"origin",
 		gitsyncUpdateBranch,
 	); err != nil {
-		return errors.Wrap(err, "failed to push changes to remote")
+		return fmt.Errorf("failed to push changes to remote: %w", err)
 	}
 	return nil
 }
@@ -280,12 +279,12 @@ func openPullRequest(repo *config.Repository, commit *commitDetails) error {
 	ref := repo.GetRef()
 	u, err := url.Parse(repo.URL)
 	if err != nil {
-		return errors.Wrap(err, "failed to parse repository URL")
+		return fmt.Errorf("failed to parse repository URL: %w", err)
 	}
 	ghRepo := filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"))
 	out, err := execCmd("gh", "auth", "token")
 	if err != nil {
-		return errors.Wrap(err, "failed to get GitHub token")
+		return fmt.Errorf("failed to get GitHub token: %w", err)
 	}
 	ghToken := strings.TrimSpace(out.String())
 	out, err = newCmd().
@@ -299,11 +298,11 @@ func openPullRequest(repo *config.Repository, commit *commitDetails) error {
 			"--json", "title,url",
 		)
 	if err != nil {
-		return errors.Wrap(err, "failed to list GitHub pull requests")
+		return fmt.Errorf("failed to list GitHub pull requests: %w", err)
 	}
 	var prs []ghPullRequest
 	if err = json.Unmarshal(out.Bytes(), &prs); err != nil {
-		return errors.Wrap(err, "failed to unmarshal GitHub pull requests list response")
+		return fmt.Errorf("failed to unmarshal GitHub pull requests list response: %w", err)
 	}
 	if len(prs) > 0 {
 		for _, pr := range prs {
@@ -333,7 +332,7 @@ func openPullRequest(repo *config.Repository, commit *commitDetails) error {
 			"--head", gitsyncUpdateBranch,
 		)
 	if err != nil {
-		return errors.Wrap(err, "failed to push changes to remote")
+		return fmt.Errorf("failed to push changes to remote: %w", err)
 	}
 	prURL := strings.TrimSpace(out.String())
 	fmt.Printf("%s: pull request URL: %s\n", repo.Name, prURL)
@@ -353,7 +352,7 @@ func cloneRepo(repo *config.Repository) error {
 		repo.URL,
 		path,
 	); err != nil {
-		return errors.Wrap(err, "failed to clone repository")
+		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 	return nil
 }
@@ -369,7 +368,7 @@ func updateTrackedRef(repo *config.Repository) error {
 		"--force",
 		"--all",
 	); err != nil {
-		return errors.Wrap(err, "failed to fetch repository objects and refs")
+		return fmt.Errorf("failed to fetch repository objects and refs: %w", err)
 	}
 	if _, err := execCmd(
 		"git",
@@ -378,7 +377,7 @@ func updateTrackedRef(repo *config.Repository) error {
 		"--force",
 		ref,
 	); err != nil {
-		return errors.Wrapf(err, "failed to force checkout %s ref", ref)
+		return fmt.Errorf("failed to force checkout %s ref: %w", ref, err)
 	}
 	if _, err := execCmd(
 		"git",
@@ -387,7 +386,7 @@ func updateTrackedRef(repo *config.Repository) error {
 		"--hard",
 		ref,
 	); err != nil {
-		return errors.Wrapf(err, "failed to hard reset repository to %s ref", ref)
+		return fmt.Errorf("failed to hard reset repository to %s ref: %w", ref, err)
 	}
 	return nil
 }
@@ -405,7 +404,7 @@ func checkoutSyncBranch(repo *config.Repository) error {
 		gitsyncUpdateBranch,
 		ref,
 	); err != nil {
-		return errors.Wrap(err, "failed to create/reset gitsync branch")
+		return fmt.Errorf("failed to create/reset gitsync branch: %w", err)
 	}
 	return nil
 }

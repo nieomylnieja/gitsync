@@ -2,12 +2,11 @@ package gitsync
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
 	"slices"
-
-	"github.com/pkg/errors"
 )
 
 type command struct {
@@ -61,7 +60,7 @@ func (c *command) Exec(name string, arg ...string) (*bytes.Buffer, error) {
 		if errors.As(err, &execErr) && slices.Contains(c.skipErroneousStatus, execErr.ExitCode()) {
 			return &stdout, nil
 		}
-		return nil, errors.Errorf("Failed to execute '%s' command: %s", cmd, stderr.String())
+		return nil, fmt.Errorf("failed to execute '%s' command: %s", cmd, stderr.String())
 	}
 	return &stdout, nil
 }
