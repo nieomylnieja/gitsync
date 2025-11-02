@@ -54,7 +54,7 @@ func Run(conf *config.Config, command Command) error {
 	}
 	updatedFiles := make(map[*config.Repository][]string, len(conf.Repositories))
 	for _, syncedRepo := range conf.Repositories {
-		for _, file := range conf.SyncFiles {
+		for _, file := range conf.SyncPaths {
 			rootFilePath := filepath.Join(conf.GetStorePath(), conf.Root.Name, file.Path)
 			updated, err := syncRepoFile(conf, command, syncedRepo, file, rootFilePath)
 			if err != nil {
@@ -91,7 +91,7 @@ func syncRepoFile(
 	conf *config.Config,
 	command Command,
 	syncedRepo *config.Repository,
-	file *config.File,
+	file *config.SyncedPath,
 	rootFilePath string,
 ) (bool, error) {
 	syncedRepoFilePath := filepath.Join(conf.GetStorePath(), syncedRepo.Name, file.Path)

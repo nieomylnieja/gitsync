@@ -1,32 +1,10 @@
 .DEFAULT_GOAL := help
 MAKEFLAGS += --silent --no-print-directory
 
-APP_NAME := gitsync
 BIN_DIR := ./bin
-MAIN_DIR := ./cmd/$(APP_NAME)
-TEST_DIR := ./test
-
-ifdef TERM
-	BATS_FLAGS = --pretty
-else
-	BATS_FLAGS = -F tap
-endif
-ifeq (${BATS_DEBUG}, true)
-	BATS_FLAGS += --trace --verbose-run
-endif
-BATS_BIN = $(TEST_DIR)/bats/bin/bats
-
-ifndef VERSION
-	VERSION := X.Y.Z
-endif
-ifndef GIT_TAG
-	GIT_TAG := $(shell git rev-parse --short=8 HEAD)
-endif
-ifndef BUILD_DATE
-	BUILD_DATE := $(shell git show -s --format=%cd --date=short $(GIT_TAG))
-endif
-
-LDFLAGS := "-s -w -X main.BuildVersion=$(VERSION) -X main.BuildGitTag=$(GIT_TAG) -X main.BuildDate=$(BUILD_DATE)"
+SCRIPTS_DIR := ./scripts
+APP_NAME := gitsync
+LDFLAGS += -s -w
 
 # Print Makefile target step description for check.
 # Only print 'check' steps this way, and not dependent steps, like 'install'.
@@ -35,28 +13,49 @@ define _print_step
 	printf -- '------\n%s...\n' "${1}"
 endef
 
+## Activate developer environment using devbox. Run `make install/devbox` first If you don't have devbox installed.
+activate:
+	devbox shell
+
+## Install devbox binary.
+install/devbox:
+	$(call _print_step,Installing devbox)
+	curl -fsSL https://get.jetpack.io/devbox | bash
+
+## Update devbox manged package versions.
+update/devbox:
+	$(call _print_step,Update packages managed by devbox)
+	devbox update
+
 .PHONY: build
-## Build the binary.
+## Build gitsync binary.
 build:
-	CGO_ENABLED=0 go build -ldflags=$(LDFLAGS) -o $(BIN_DIR)/$(APP_NAME) $(MAIN_DIR)
+	$(call _print_step,Building binary)
+	mkdir -p $(BIN_DIR)
+	go build -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME) ./cmd/$(APP_NAME)
 
 .PHONY: release
 ## Build and release the binaries.
 release:
-	@goreleaser release --snapshot --clean
+	$(call _print_step,Releasing binary)
+	goreleaser release --snapshot --clean
 
-.PHONY: test test/unit
-## Run all tests.
-test: test/unit
-
+.PHONY: test
 ## Run all unit tests.
-test/unit:
+test:
 	$(call _print_step,Running unit tests)
 	go test -race -cover ./...
 
-.PHONY: check check/vet check/lint check/gosec check/spell check/trailing check/markdown check/format
+.PHONY: test/coverage
+## Produce test coverage report and inspect it in browser.
+test/coverage:
+	$(call _print_step,Running test coverage report)
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
+
+.PHONY: check check/vet check/lint check/gosec check/spell check/trailing check/markdown check/generate check/vulnerabilities
 ## Run all checks.
-check: check/vet check/lint check/gosec check/spell check/trailing check/markdown check/format
+check: check/vet check/lint check/gosec check/spell check/trailing check/markdown check/generate check/vulnerabilities
 
 ## Run 'go vet' on the whole project.
 check/vet:
@@ -71,66 +70,52 @@ check/lint:
 ## Check for security problems using gosec, which inspects the Go code by scanning the AST.
 check/gosec:
 	$(call _print_step,Running gosec)
-	gosec -exclude-dir=test -exclude-generated -quiet ./...
+	gosec -exclude-generated -quiet ./...
 
 ## Check spelling, rules are defined in cspell.json.
 check/spell:
 	$(call _print_step,Verifying spelling)
-	yarn --silent cspell --no-progress '**/**'
+	cspell --no-progress '**/**'
 
 ## Check for trailing whitespaces in any of the projects' files.
 check/trailing:
 	$(call _print_step,Looking for trailing whitespaces)
-	./scripts/check-trailing-whitespaces.bash
+	$(SCRIPTS_DIR)/check-trailing-whitespaces.bash
 
 ## Check markdown files for potential issues with markdownlint.
 check/markdown:
 	$(call _print_step,Verifying Markdown files)
-	yarn --silent markdownlint '**/*.md' --ignore node_modules
+	markdownlint '**/*.md' --ignore 'node_modules'
 
 ## Check for potential vulnerabilities across all Go dependencies.
-check/vulns:
+check/vulnerabilities:
 	$(call _print_step,Running govulncheck)
 	govulncheck ./...
 
-## Verify if the files are formatted.
-## You must first commit the changes, otherwise it won't detect the diffs.
-check/format:
-	$(call _print_step,Checking if files are formatted)
-	./scripts/check-formatting.sh
+## Verify if the auto generated code has been committed.
+check/generate:
+	$(call _print_step,Checking if generated code matches the provided definitions)
+	$(SCRIPTS_DIR)/check-generate.bash
 
-.PHONY: generate
+.PHONY: generate generate/code
+## Auto generate files.
+generate: generate/code
+
 ## Generate Golang code.
-generate:
-	echo "Generating Go code..."
+generate/code:
+	$(call _print_step,Generating Golang code...)
 	go generate ./...
 
-.PHONY: format format/go format/cspell
+.PHONY: format format/go
 ## Format files.
-format: format/go format/cspell
+format: format/go
 
 ## Format Go files.
 format/go:
-	echo "Formatting Go files..."
-	gofumpt -l -w -extra .
-	goimports -local=$$(head -1 go.mod | awk '{print $$2}') -w .
-	golines -m 120 --ignore-generated --reformat-tags -w .
-
-## Format cspell config file.
-format/cspell:
-	echo "Formatting cspell.yaml configuration (words list)..."
-	yarn --silent format-cspell-config
-
-.PHONY: install
-## Install all dev dependencies.
-install: install/yarn
-
-## Install JS dependencies with yarn.
-install/yarn:
-	echo "Installing yarn dependencies..."
-	yarn --silent install
+	$(call _print_step,Formatting Go files)
+	golangci-lint fmt
 
 .PHONY: help
 ## Print this help message.
 help:
-	./scripts/makefile-help.awk $(MAKEFILE_LIST)
+	$(SCRIPTS_DIR)/makefile-help.awk $(MAKEFILE_LIST)

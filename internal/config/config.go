@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/nieomylnieja/gitsync/internal/diff"
+	"github.com/nobl9/govy/pkg/govy"
+	"github.com/nobl9/govy/pkg/rules"
 )
 
 const defaultRef = "origin/main"
@@ -18,7 +20,7 @@ type Config struct {
 	Root         *Repository   `json:"root"`
 	Ignore       []*IgnoreRule `json:"ignore,omitempty"`
 	Repositories []*Repository `json:"syncRepositories"`
-	SyncFiles    []*File       `json:"syncFiles"`
+	SyncPaths    []*SyncedPath `json:"syncPaths"`
 
 	path              string
 	resolvedStorePath string
@@ -52,7 +54,7 @@ func (r *Repository) GetRef() string {
 	return r.defaultRef
 }
 
-type File struct {
+type SyncedPath struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 }
@@ -131,12 +133,39 @@ func (c *Config) setDefaults() error {
 	return nil
 }
 
+var configValidation = govy.New(
+	govy.For(func(c Config) string { return c.StorePath }).
+		OmitEmpty().
+		Rules(rules.StringFilePath()),
+	govy.ForPointer(func(c Config) *Repository { return c.Root }).
+		Required().
+		Include(repositoryValidation),
+	govy.ForSlice(func(c Config) []*IgnoreRule { return c.Ignore }).
+		IncludeForEach(ignoreRuleValidation),
+)
+
+var ignoreRuleValidation = govy.New(
+	govy.ForSlice(func(i *IgnoreRule) []string { return i.Regex }).
+		RulesForEach(rules.StringRegexp()),
+)
+
+var repositoryValidation = govy.New(
+	govy.For(func(r Repository) string { return r.Name }).
+		Required(),
+	govy.For(func(r Repository) string { return r.URL }).
+		Required().
+		Rules(rules.StringURL()),
+	govy.For(func(r Repository) string { return r.Ref }).
+		OmitEmpty().
+		Rules(rules.StringGitRef()),
+)
+
 func (c *Config) validate() error {
 	if len(c.Repositories) == 0 {
 		return errors.New("at least one repository is required")
 	}
-	if len(c.SyncFiles) == 0 {
-		return errors.New("at least one file to keep in sync is required")
+	if len(c.SyncPaths) == 0 {
+		return errors.New("at least one path to keep in sync is required")
 	}
 	unique := make(map[string]struct{})
 	for _, repo := range append(c.Repositories, c.Root) {
@@ -153,14 +182,14 @@ func (c *Config) validate() error {
 		}
 	}
 	unique = make(map[string]struct{})
-	for _, file := range c.SyncFiles {
-		if _, ok := unique[file.Name]; ok {
-			return fmt.Errorf("file name '%s' is not unique", file.Name)
+	for _, path := range c.SyncPaths {
+		if _, ok := unique[path.Path]; ok {
+			return fmt.Errorf("path '%s' is not unique", path.Path)
 		} else {
-			unique[file.Name] = struct{}{}
+			unique[path.Path] = struct{}{}
 		}
-		if err := file.validate(); err != nil {
-			return fmt.Errorf("file %s validation failed: %w", file.Name, err)
+		if err := path.validate(); err != nil {
+			return fmt.Errorf("synced path %s validation failed: %w", path.Name, err)
 		}
 	}
 	for _, ignore := range c.Ignore {
@@ -171,12 +200,12 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func (f *File) validate() error {
-	if f.Name == "" {
-		return errors.New("file name is required")
+func (s *SyncedPath) validate() error {
+	if s.Name == "" {
+		return errors.New("descriptive path name is required")
 	}
-	if f.Path == "" {
-		return errors.New("file path is required")
+	if s.Path == "" {
+		return errors.New("path is required")
 	}
 	return nil
 }

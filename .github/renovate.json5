@@ -16,7 +16,33 @@
   "rangeStrategy": "pin",
   "branchPrefix": "renovate_",
   "commitMessagePrefix": "chore:",
-  // Manager-specific configs:
   // This will run go mod tidy after each go.mod update.
   "postUpdateOptions": ["gomodTidy"],
+  // Groups:
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+      ],
+      "groupName": "minor and patch Golang dependencies",
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "addLabels": ["github-actions"],
+    },
+    {
+      "matchManagers": ["gomod"],
+      "addLabels": ["golang"],
+    },
+    {
+      "matchManagers": ["npm"],
+      "addLabels": ["javascript"],
+    },
+  ],
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/node_modules/**"
+  ]
 }

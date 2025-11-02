@@ -115,14 +115,14 @@ The config file is a JSON file which describes the synchronization process.
   },
   // Optional.
   "ignore": [
-    // If neither 'repositoryName' nor 'fileName' is provided,
+    // If neither 'repositoryName' nor 'path' is provided,
     // the rule will apply globally.
     // If both are provided, the rule will apply only to the specific repository file.
     {
       // Optional. Name of the repository to which the ignore rule applies.
       "repositoryName": "go-libyear",
-      // Optional. Name of the file to which the ignore rule applies.
-      "fileName": "golangci linter config",
+      // Optional. File system path to which the ignore rule applies.
+      "path": ".golangci.yml",
       // Optional. List of regular expressions used to ignore matching hunks.
       // Note: This regular expression is passed to 'diff -I <regex>' and thus follows
       // BRE (basic regular expression) rules, you may need to escape some characters, like '+'.
@@ -160,12 +160,13 @@ The config file is a JSON file which describes the synchronization process.
       "url": "https://github.com/nieomylnieja/sword-to-obsidian.git"
     }
   ],
-  // Required. At least one file must be provided.
-  "syncFiles": [
+  // Required. At least one path must be provided.
+  "syncPaths": [
     {
       // Required. Descriptive name of the file.
       "name": "golangci linter config",
       // Required. Relative path to the file in both root and synchronized repositories.
+      // It is used further along to uniquely reference files or directories.
       "path": ".golangci.yml"
     }
   ]

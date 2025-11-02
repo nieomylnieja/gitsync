@@ -40,3 +40,6 @@ func TestReadmeExample(t *testing.T) {
 		t.Fatal(err, "config validation failed")
 	}
 }
+
+func TestConfig(t *testing.T) {
+}
