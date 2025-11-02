@@ -42,5 +42,4 @@ func TestReadmeExample(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
-
 }
